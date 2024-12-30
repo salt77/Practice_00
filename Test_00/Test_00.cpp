@@ -3,8 +3,10 @@
 #include <mutex>
 #include <iostream>
 #include <windows.h>
+#include <future>
 
 std::mutex m;
+std::condition_variable cv;	// 조건 변수 : 이벤트와 유사하지만 커널 오브젝트가 아닌 유저 레벨 오브젝트
 
 /* 데드락 ? */
 // 서로 다른 스레드들 간에서 서로 락을 하고 있는 상황
@@ -49,6 +51,8 @@ int a = 0;
 
 void Add()
 {
+	std::unique_lock<std::mutex> lock(m);
+
 	for (int i = 0; i < 100'0000; ++i)
 	{
 		//sl.lock();
@@ -56,25 +60,51 @@ void Add()
 		//sl.unlock();
 	}
 
-	SetEvent(handle);
+	//SetEvent(handle);
+	cv.notify_one();
 }
 
 void Sub()
 {
 	// 이벤트가 시그널 상태가 아니면 아래 반복문을 실행하지 않고 여기서 기다린다. (bManualReset == FALSE : wait 종료 시 자동으로 논-시그널 상태로 변경함)
 	// 현재 예제는 사실상 싱글 스레드 동작 방식인데, 큐 이벤트와 같은 곳에서 사용하는 것이 더 올바르다.
-	WaitForSingleObject(handle, INFINITE);
+	//WaitForSingleObject(handle, INFINITE);
 
 	for (int i = 0; i < 100'0000; ++i)
 	{
+		// 조건 변수는 항상 먼저 유니크 락을 건 상태에서 시작한다. (매개변수로 넘겨줌)
+		// 두 번째 매개변수로 받은 함수가 true 이면 아래 코드를 실행하고 아니면 다음 notify 를 기다린다.
+		// notify 를 받아서 깨어나는 것인데 더블 체크하는 이유 : notify 자체도 원자적으로 실행되지 않기 때문에 알림을 받고 깨어났는데 다른 스레드가 자원을 이미 활용했을 수가 있어서
+		std::unique_lock<std::mutex> ul(m);
+		cv.wait(ul, []() { return a > 0; });
+
 		//sl.lock();
 		--a;
 		//sl.unlock();
 	}
 }
 
+// std::future : 이름 그대로 미래에 결과물을 받아보기 위해서 사용하는 객체
+// std::async 매개변수에 따라서 동작이 완전히 달라진다.
+// 1. std::launch::defered : 지연 실행 (객체만 생성해두고 미래에 get 하는 시점에서 함수를 호출, 싱글 스레드처럼 동작)
+// 2. std::launch::async : 임시 스레드를 생성해서 비동기 실행 (멀티 스레드 실행이지만, 별도로 스레드를 생성해서 관리해줄 필요가 없고 간단하게 사용하는 방법이다.)
+unsigned int ProcessFuture()
+{
+	int sum = 0;
+	for (int i = 0; i < 1000'0000; ++i)
+	{
+		// 대충 무거운 작업 실행
+		sum += i;
+	}
+
+	return sum;
+}
+
 int main()
 {
+	// future 객체 생성
+	std::future<unsigned int> future = std::async(std::launch::async, ProcessFuture);
+
 	// 커널 이벤트 생성
 	handle = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
@@ -90,6 +120,8 @@ int main()
 	{
 		CloseHandle(handle);
 	}
+
+	std::cout << future.get() << std::endl;
 
 	return 0;
 }
