@@ -1,9 +1,4 @@
-﻿#include <thread>
-#include <vector>
-#include <mutex>
-#include <iostream>
-#include <windows.h>
-#include <future>
+﻿#include "stdafx.h"
 
 std::mutex m;
 std::condition_variable cv;	// 조건 변수 : 이벤트와 유사하지만 커널 오브젝트가 아닌 유저 레벨 오브젝트
@@ -41,6 +36,7 @@ public:
 		isLockedFlag.clear();
 	}
 
+private:
 	std::atomic_flag isLockedFlag = ATOMIC_FLAG_INIT;
 };
 
